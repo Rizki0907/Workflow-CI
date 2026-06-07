@@ -41,6 +41,7 @@ jobs:
           mlflow run MLProject --env-manager=local
 
       - name: Get latest MLflow run_id
+        id: get_run_id
         env:
           MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
           MLFLOW_TRACKING_USERNAME: ${{ secrets.MLFLOW_TRACKING_USERNAME }}
@@ -55,7 +56,10 @@ jobs:
           for exp in experiments:
               runs = client.search_runs(exp.experiment_id, order_by=['start_time DESC'], max_results=1)
               if runs:
-                  print(f'Latest run_id: {runs[0].info.run_id}')
+                  run_id = runs[0].info.run_id
+                  print(f'Latest run_id: {run_id}')
+                  with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                      f.write(f'run_id={run_id}\n')
                   break
           "
 
@@ -68,3 +72,28 @@ jobs:
         with:
           name: mlflow-artifacts
           path: mlruns/
+
+      - name: Build Docker Model
+        env:
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+          MLFLOW_TRACKING_USERNAME: ${{ secrets.MLFLOW_TRACKING_USERNAME }}
+          MLFLOW_TRACKING_PASSWORD: ${{ secrets.MLFLOW_TRACKING_PASSWORD }}
+        run: |
+          mlflow models build-docker \
+            -m "runs:/${{ steps.get_run_id.outputs.run_id }}/model" \
+            -n "heart-disease-model" \
+            --enable-mlserver
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Tag Docker Image
+        run: |
+          docker tag heart-disease-model ${{ secrets.DOCKER_USERNAME }}/heart-disease-model:latest
+
+      - name: Push Docker Image
+        run: |
+          docker push ${{ secrets.DOCKER_USERNAME }}/heart-disease-model:latest
