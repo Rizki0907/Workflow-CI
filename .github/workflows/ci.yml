@@ -79,10 +79,20 @@ jobs:
           MLFLOW_TRACKING_USERNAME: ${{ secrets.MLFLOW_TRACKING_USERNAME }}
           MLFLOW_TRACKING_PASSWORD: ${{ secrets.MLFLOW_TRACKING_PASSWORD }}
         run: |
-          mlflow models build-docker \
-            -m "runs:/${{ steps.get_run_id.outputs.run_id }}/model" \
-            -n "heart-disease-model" \
-            --enable-mlserver
+          python -c "
+          import mlflow
+          import os
+          import shutil
+
+          mlflow.set_tracking_uri(os.environ['MLFLOW_TRACKING_URI'])
+          run_id = '${{ steps.get_run_id.outputs.run_id }}'
+          
+          # Download model artifacts
+          client = mlflow.tracking.MlflowClient()
+          client.download_artifacts(run_id, 'model', 'MLProject')
+          print(f'Model downloaded from run: {run_id}')
+          "
+          docker build -t heart-disease-model MLProject/
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
